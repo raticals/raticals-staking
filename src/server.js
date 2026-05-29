@@ -34,15 +34,31 @@ app.post('/api/stake', async (req, res) => {
       .eq('address', normalizedAddress)
       .single();
 
-    if (existing && existing.is_staking) {
-      return res.json({
-        success: true,
-        message: 'Already staking',
-        wallet: existing,
-        tierLabel: getTierLabel(existing.current_tier),
-        dailyPoints: calcDailyPoints(existing.rat_count || ratCount, existing.poison_count || poisonCount),
-      });
-    }
+if (existing && existing.is_staking) {
+  const { data: updated, error: updateError } = await supabase
+    .from('wallets')
+    .update({
+      has_rat: hasRat,
+      has_poison: hasPoison,
+      rat_count: ratCount,
+      poison_count: poisonCount,
+      current_tier: tier,
+      last_snapshot_at: new Date().toISOString(),
+    })
+    .eq('address', normalizedAddress)
+    .select()
+    .single();
+
+  if (updateError) throw updateError;
+
+  return res.json({
+    success: true,
+    message: 'Stake updated',
+    wallet: updated,
+    tierLabel: getTierLabel(tier),
+    dailyPoints: calcDailyPoints(ratCount, poisonCount),
+  });
+}
 
     const walletData = {
       address: normalizedAddress,
