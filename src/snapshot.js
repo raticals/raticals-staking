@@ -31,7 +31,7 @@ async function processWallet(wallet) {
   const address = wallet.address;
 
   try {
-    const { hasRat, hasPoison } = await checkWalletNFTs(address);
+    const { hasRat, hasPoison, ratCount, poisonCount } = await checkWalletNFTs(address);
     const { isListed } = await checkIfListed(address);
     const tier = getTier(hasRat, hasPoison);
     const hasNFTs = hasRat || hasPoison;
@@ -43,8 +43,8 @@ async function processWallet(wallet) {
       return;
     }
 
-    const pointsToAward = calcSnapshotPoints(wallet.rat_count || 0, wallet.poison_count || 0);
-    await awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison);
+    const pointsToAward = calcSnapshotPoints(ratCount, poisonCount);
+    await awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison, ratCount, poisonCount);
 
   } catch (err) {
     console.error(`[Snapshot] Error processing ${address}:`, err.message);
@@ -85,7 +85,7 @@ async function wipePoints(wallet, reason, hasRat, hasPoison, isListed) {
   }).eq('address', address);
 }
 
-async function awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison) {
+async function awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison, ratCount, poisonCount) {
   const address = wallet.address;
   const pointsBefore = wallet.total_points;
   const pointsAfter = parseFloat((pointsBefore + pointsToAward).toFixed(4));
@@ -113,6 +113,8 @@ async function awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison) {
     total_points: pointsAfter,
     has_rat: hasRat,
     has_poison: hasPoison,
+    rat_count: ratCount,
+    poison_count: poisonCount,
     current_tier: tier,
     is_staking: true,
     last_snapshot_at: new Date().toISOString(),
