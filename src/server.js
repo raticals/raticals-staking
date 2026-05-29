@@ -153,6 +153,43 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+app.post('/api/unstake', async (req, res) => {
+  const { address } = req.body;
+  if (!address) return res.status(400).json({ error: 'Wallet address required' });
+
+  const normalizedAddress = address.toLowerCase();
+
+  try {
+    const { data: wallet } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('address', normalizedAddress)
+      .single();
+
+    if (!wallet) return res.status(404).json({ error: 'Wallet not found' });
+
+    await supabase.from('points_history').insert({
+      wallet_address: normalizedAddress,
+      points_before: wallet.total_points,
+      points_after: 0,
+      change_reason: 'unstake_wipe',
+    });
+
+    await supabase.from('wallets').update({
+      is_staking: false,
+      total_points: 0,
+      current_tier: 'none',
+      points_wiped_at: new Date().toISOString(),
+    }).eq('address', normalizedAddress);
+
+    res.json({ success: true, message: 'Unstaked and points wiped' });
+
+  } catch (err) {
+    console.error('[/api/unstake]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
