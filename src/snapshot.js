@@ -43,7 +43,7 @@ async function processWallet(wallet) {
       return;
     }
 
-    const pointsToAward = calcSnapshotPoints(tier);
+    const pointsToAward = calcSnapshotPoints(wallet.rat_count || 0, wallet.poison_count || 0);
     await awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison);
 
   } catch (err) {
