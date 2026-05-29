@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const supabase = require('./supabase');
 const { checkWalletNFTs } = require('./alchemy');
-const { getTier, getTierLabel, POINTS_PER_DAY } = require('./points');
+const { getTier, getTierLabel, calcDailyPoints, POINTS_PER_DAY } = require('./points');
 
 const app = express();
 app.use(cors());
@@ -18,14 +18,13 @@ app.post('/api/stake', async (req, res) => {
   const normalizedAddress = address.toLowerCase();
 
   try {
-    const { hasRat, hasPoison } = await checkWalletNFTs(normalizedAddress);
+    const { hasRat, hasPoison, ratCount, poisonCount } = await checkWalletNFTs(normalizedAddress);
     const tier = getTier(hasRat, hasPoison);
 
     if (tier === 'none') {
       return res.status(400).json({
         error: 'No Raticals or RatPoison NFTs found in this wallet.',
-        hasRat,
-        hasPoison,
+        hasRat, hasPoison,
       });
     }
 
@@ -41,6 +40,7 @@ app.post('/api/stake', async (req, res) => {
         message: 'Already staking',
         wallet: existing,
         tierLabel: getTierLabel(existing.current_tier),
+        dailyPoints: calcDailyPoints(existing.rat_count || ratCount, existing.poison_count || poisonCount),
       });
     }
 
@@ -50,13 +50,13 @@ app.post('/api/stake', async (req, res) => {
       staking_started_at: new Date().toISOString(),
       has_rat: hasRat,
       has_poison: hasPoison,
+      rat_count: ratCount,
+      poison_count: poisonCount,
       current_tier: tier,
       last_snapshot_at: new Date().toISOString(),
     };
 
-    if (!existing) {
-      walletData.total_points = 0;
-    }
+    if (!existing) walletData.total_points = 0;
 
     const { data, error } = await supabase
       .from('wallets')
@@ -71,6 +71,7 @@ app.post('/api/stake', async (req, res) => {
       message: 'Staking activated',
       wallet: data,
       tierLabel: getTierLabel(tier),
+      dailyPoints: calcDailyPoints(ratCount, poisonCount),
     });
 
   } catch (err) {
@@ -83,8 +84,9 @@ app.get('/api/wallet/:address', async (req, res) => {
   const address = req.params.address.toLowerCase();
 
   try {
-    const { hasRat, hasPoison } = await checkWalletNFTs(address);
+    const { hasRat, hasPoison, ratCount, poisonCount } = await checkWalletNFTs(address);
     const tier = getTier(hasRat, hasPoison);
+    const dailyPoints = calcDailyPoints(ratCount, poisonCount);
 
     const { data: wallet } = await supabase
       .from('wallets')
@@ -98,9 +100,11 @@ app.get('/api/wallet/:address', async (req, res) => {
       liveCheck: {
         hasRat,
         hasPoison,
+        ratCount,
+        poisonCount,
         tier,
         tierLabel: getTierLabel(tier),
-        dailyPoints: POINTS_PER_DAY[tier] || 0,
+        dailyPoints,
       },
     });
 
@@ -118,7 +122,6 @@ app.get('/api/leaderboard', async (req, res) => {
       .limit(50);
 
     if (error) throw error;
-
     res.json({ leaderboard: data });
   } catch (err) {
     console.error('[/api/leaderboard]', err.message);
@@ -138,17 +141,12 @@ app.get('/api/stats', async (req, res) => {
     const totalPoints = wallets.reduce((sum, w) => sum + (w.total_points || 0), 0);
 
     const tierCounts = {
-      both: staking.filter(w => w.current_tier === 'both').length,
-      rat_only: staking.filter(w => w.current_tier === 'rat_only').length,
-      poison_only: staking.filter(w => w.current_tier === 'poison_only').length,
+      both:         staking.filter(w => w.current_tier === 'both').length,
+      rat_only:     staking.filter(w => w.current_tier === 'rat_only').length,
+      poison_only:  staking.filter(w => w.current_tier === 'poison_only').length,
     };
 
-    res.json({
-      totalStakers: staking.length,
-      totalPointsAwarded: totalPoints,
-      tierCounts,
-    });
-
+    res.json({ totalStakers: staking.length, totalPointsAwarded: totalPoints, tierCounts });
   } catch (err) {
     console.error('[/api/stats]', err.message);
     res.status(500).json({ error: 'Internal server error' });
