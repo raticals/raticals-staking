@@ -83,7 +83,6 @@ app.get('/api/wallet/:address', async (req, res) => {
   const address = req.params.address.toLowerCase();
 
   try {
-    // Always check NFTs live, regardless of registration
     const { hasRat, hasPoison } = await checkWalletNFTs(address);
     const tier = getTier(hasRat, hasPoison);
 
@@ -96,27 +95,6 @@ app.get('/api/wallet/:address', async (req, res) => {
     res.json({
       registered: !!wallet,
       wallet: wallet || null,
-      liveCheck: {
-        hasRat,
-        hasPoison,
-        tier,
-        tierLabel: getTierLabel(tier),
-        dailyPoints: POINTS_PER_DAY[tier] || 0,
-      },
-    });
-
-  } catch (err) {
-    console.error('[/api/wallet]', err.message);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-    const { hasRat, hasPoison } = await checkWalletNFTs(address);
-    const tier = getTier(hasRat, hasPoison);
-
-    res.json({
-      registered: true,
-      wallet,
       liveCheck: {
         hasRat,
         hasPoison,
