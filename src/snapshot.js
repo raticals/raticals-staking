@@ -1,11 +1,13 @@
 require('dotenv').config();
+
 const supabase = require('./supabase');
 const { checkWalletNFTs } = require('./alchemy');
 const { checkIfListed } = require('./opensea');
-const { getTier, calcSnapshotPoints } = require('./points');
+const { getTier, calcDailyPoints, calcSnapshotPoints } = require('./points');
 
 async function runSnapshot() {
   console.log(`\n[Snapshot] Starting — ${new Date().toISOString()}`);
+  console.log('[Snapshot Version] DEBUG_1_TO_1_PAIRING_2026_05_29');
 
   const { data: wallets, error } = await supabase
     .from('wallets')
@@ -33,27 +35,46 @@ async function processWallet(wallet) {
   try {
     const { hasRat, hasPoison, ratCount, poisonCount } = await checkWalletNFTs(address);
     const { isListed } = await checkIfListed(address);
+
     const tier = getTier(hasRat, hasPoison);
     const hasNFTs = hasRat || hasPoison;
     const shouldWipe = !hasNFTs || isListed;
 
+    console.log(
+      `[Snapshot Check] ${address} — ratCount=${ratCount}, poisonCount=${poisonCount}, tier=${tier}, isListed=${isListed}`
+    );
+
     if (shouldWipe) {
       const reason = !hasNFTs ? 'wipe_sold' : 'wipe_listed';
-      await wipePoints(wallet, reason, hasRat, hasPoison, isListed);
+      await wipePoints(wallet, reason, hasRat, hasPoison, isListed, ratCount, poisonCount);
       return;
     }
 
+    const dailyPoints = calcDailyPoints(ratCount, poisonCount);
     const pointsToAward = calcSnapshotPoints(ratCount, poisonCount);
-    await awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison, ratCount, poisonCount);
+
+    console.log(
+      `[Points Calc] ${address} — daily=${dailyPoints}, snapshot=${pointsToAward}`
+    );
+
+    await awardPoints(
+      wallet,
+      pointsToAward,
+      tier,
+      hasRat,
+      hasPoison,
+      ratCount,
+      poisonCount
+    );
 
   } catch (err) {
     console.error(`[Snapshot] Error processing ${address}:`, err.message);
   }
 }
 
-async function wipePoints(wallet, reason, hasRat, hasPoison, isListed) {
+async function wipePoints(wallet, reason, hasRat, hasPoison, isListed, ratCount = 0, poisonCount = 0) {
   const address = wallet.address;
-  const pointsBefore = wallet.total_points;
+  const pointsBefore = Number(wallet.total_points || 0);
 
   console.log(`[WIPE] ${address} — reason: ${reason} — lost ${pointsBefore} points`);
 
@@ -79,6 +100,8 @@ async function wipePoints(wallet, reason, hasRat, hasPoison, isListed) {
     is_staking: false,
     has_rat: hasRat,
     has_poison: hasPoison,
+    rat_count: ratCount,
+    poison_count: poisonCount,
     current_tier: 'none',
     points_wiped_at: new Date().toISOString(),
     last_snapshot_at: new Date().toISOString(),
@@ -87,10 +110,12 @@ async function wipePoints(wallet, reason, hasRat, hasPoison, isListed) {
 
 async function awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison, ratCount, poisonCount) {
   const address = wallet.address;
-  const pointsBefore = wallet.total_points;
+  const pointsBefore = Number(wallet.total_points || 0);
   const pointsAfter = parseFloat((pointsBefore + pointsToAward).toFixed(4));
 
-  console.log(`[AWARD] ${address} — tier: ${tier} — +${pointsToAward} pts — total: ${pointsAfter}`);
+  console.log(
+    `[AWARD] ${address} — rats=${ratCount}, poison=${poisonCount}, tier=${tier} — +${pointsToAward} pts — total=${pointsAfter}`
+  );
 
   await supabase.from('points_history').insert({
     wallet_address: address,
@@ -105,7 +130,7 @@ async function awardPoints(wallet, pointsToAward, tier, hasRat, hasPoison, ratCo
     had_poison: hasPoison,
     was_listed: false,
     points_awarded: pointsToAward,
-    tier: tier,
+    tier,
     wiped: false,
   });
 
@@ -126,10 +151,12 @@ function sleep(ms) {
 }
 
 if (require.main === module) {
-  runSnapshot().then(() => process.exit(0)).catch(err => {
-    console.error('[Snapshot] Fatal error:', err);
-    process.exit(1);
-  });
+  runSnapshot()
+    .then(() => process.exit(0))
+    .catch(err => {
+      console.error('[Snapshot] Fatal error:', err);
+      process.exit(1);
+    });
 }
 
 module.exports = { runSnapshot };
