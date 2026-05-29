@@ -11,15 +11,52 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Show checked out commit
+        run: |
+          echo "Branch/ref:"
+          git branch --show-current || true
+          echo "Commit:"
+          git rev-parse HEAD
+          echo "Recent commits:"
+          git log --oneline -5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
 
       - name: Install dependencies
         run: npm install
+
+      - name: Verify points formula
+        run: |
+          echo "Checking points.js contains 1:1 pairing formula..."
+          grep -n "pairedCount" src/points.js || true
+          grep -n "calcDailyPoints" src/points.js || true
+
+          echo "Testing formula directly..."
+          node - <<'NODE'
+          const { calcDailyPoints, calcSnapshotPoints } = require('./src/points');
+
+          const tests = [
+            [1, 0],
+            [0, 1],
+            [1, 1],
+            [2, 1],
+            [5, 5],
+            [66, 0],
+            [66, 1],
+            [66, 10],
+          ];
+
+          for (const [rats, poison] of tests) {
+            console.log(
+              `${rats} rats + ${poison} poison => daily=${calcDailyPoints(rats, poison)}, snapshot=${calcSnapshotPoints(rats, poison)}`
+            );
+          }
+          NODE
 
       - name: Run snapshot
         env:
