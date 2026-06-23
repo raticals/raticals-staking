@@ -5,9 +5,12 @@ const { checkWalletNFTs } = require('./alchemy');
 const { checkIfListed } = require('./opensea');
 const { getTier, calcDailyPoints, calcSnapshotPoints } = require('./points');
 
+const ALLOW_WIPES = process.env.ALLOW_WIPES === 'true';
+
 async function runSnapshot() {
   console.log(`\n[Snapshot] Starting — ${new Date().toISOString()}`);
-  console.log('[Snapshot Version] DEBUG_1_TO_1_PAIRING_2026_05_29');
+  console.log('[Snapshot Version] SAFE_SKIP_ON_API_FAILURE_2026_06_18');
+  console.log(`[Snapshot Safety] ALLOW_WIPES=${ALLOW_WIPES}`);
 
   const { data: wallets, error } = await supabase
     .from('wallets')
@@ -33,8 +36,23 @@ async function processWallet(wallet) {
   const address = wallet.address;
 
   try {
-    const { hasRat, hasPoison, ratCount, poisonCount } = await checkWalletNFTs(address);
-    const { isListed } = await checkIfListed(address);
+    const nftCheck = await checkWalletNFTs(address);
+
+    if (!nftCheck || nftCheck.ok !== true) {
+      console.warn(`[SKIP] ${address} — NFT check failed, no award, no wipe`);
+      return;
+    }
+
+    const { hasRat, hasPoison, ratCount, poisonCount } = nftCheck;
+
+    const listingCheck = await checkIfListed(address);
+
+    if (!listingCheck || listingCheck.ok !== true) {
+      console.warn(`[SKIP] ${address} — OpenSea listing check failed, no award, no wipe`);
+      return;
+    }
+
+    const { isListed } = listingCheck;
 
     const tier = getTier(hasRat, hasPoison);
     const hasNFTs = hasRat || hasPoison;
@@ -75,6 +93,34 @@ async function processWallet(wallet) {
 async function wipePoints(wallet, reason, hasRat, hasPoison, isListed, ratCount = 0, poisonCount = 0) {
   const address = wallet.address;
   const pointsBefore = Number(wallet.total_points || 0);
+
+  if (!ALLOW_WIPES) {
+    console.warn(
+      `[WIPE BLOCKED] ${address} — reason: ${reason} — would have wiped ${pointsBefore} points`
+    );
+
+    await supabase.from('snapshots').insert({
+      wallet_address: address,
+      had_rat: hasRat,
+      had_poison: hasPoison,
+      was_listed: isListed,
+      points_awarded: 0,
+      tier: getTier(hasRat, hasPoison),
+      wiped: false,
+    });
+
+    await supabase.from('wallets').update({
+      has_rat: hasRat,
+      has_poison: hasPoison,
+      rat_count: ratCount,
+      poison_count: poisonCount,
+      current_tier: getTier(hasRat, hasPoison),
+      is_staking: true,
+      last_snapshot_at: new Date().toISOString(),
+    }).eq('address', address);
+
+    return;
+  }
 
   console.log(`[WIPE] ${address} — reason: ${reason} — lost ${pointsBefore} points`);
 
