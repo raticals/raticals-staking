@@ -1,13 +1,18 @@
 name: Raticals Staking Snapshot
 
 on:
-  # schedule:
-  #   - cron: '*/30 * * * *'
+  schedule:
+    - cron: '13,43 * * * *'
   workflow_dispatch:
+
+concurrency:
+  group: raticals-staking-snapshot
+  cancel-in-progress: false
 
 jobs:
   snapshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repo
