@@ -1,46 +1,47 @@
 require('dotenv').config();
 const axios = require('axios');
 
-const RATICALS_CONTRACT  = process.env.RATICALS_CONTRACT.toLowerCase();
-const RATPOISON_CONTRACT = process.env.RATPOISON_CONTRACT.toLowerCase();
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is missing`);
+  return value;
+}
+
+const RATICALS_CONTRACT = requireEnv('RATICALS_CONTRACT').toLowerCase();
+const RATPOISON_CONTRACT = requireEnv('RATPOISON_CONTRACT').toLowerCase();
 
 async function getContractCount(walletAddress, contractAddress) {
-  try {
-    let count = 0;
-    let cursor = null;
+  let count = 0;
+  let cursor = null;
 
-    do {
-      const params = {
-        chain: 'eth',
-        format: 'decimal',
-        limit: 100,
-        media_items: false,
-      };
-      if (cursor) params.cursor = cursor;
+  do {
+    const params = {
+      chain: 'eth',
+      format: 'decimal',
+      limit: 100,
+      media_items: false,
+    };
 
-      const url = `https://deep-index.moralis.io/api/v2.2/${walletAddress}/nft/${contractAddress}`;
-      const response = await axios.get(url, {
-        headers: {
-          accept: 'application/json',
-          'X-API-Key': process.env.MORALIS_API_KEY,
-        },
-        params,
-        timeout: 10000,
-      });
+    if (cursor) params.cursor = cursor;
 
-      const results = response.data?.result || [];
-      count += results.length;
-      cursor = response.data?.cursor || null;
+    const url = `https://deep-index.moralis.io/api/v2.2/${walletAddress}/nft/${contractAddress}`;
 
-    } while (cursor);
+    const response = await axios.get(url, {
+      headers: {
+        accept: 'application/json',
+        'X-API-Key': process.env.MORALIS_API_KEY,
+      },
+      params,
+      timeout: 15000,
+    });
 
-    console.log(`[Moralis] ${walletAddress} — contract ${contractAddress} — count: ${count}`);
-    return count;
+    const results = response.data?.result || [];
+    count += results.length;
+    cursor = response.data?.cursor || null;
+  } while (cursor);
 
-  } catch (err) {
-    console.error(`[Moralis] Error checking ${contractAddress}:`, err.message);
-    return 0;
-  }
+  console.log(`[Moralis] ${walletAddress} — contract ${contractAddress} — count: ${count}`);
+  return count;
 }
 
 async function checkWalletNFTs(walletAddress) {
@@ -50,15 +51,24 @@ async function checkWalletNFTs(walletAddress) {
       getContractCount(walletAddress, RATPOISON_CONTRACT),
     ]);
 
-    const hasRat    = ratCount > 0;
-    const hasPoison = poisonCount > 0;
-
-    console.log(`[Moralis] Result — ratCount: ${ratCount}, poisonCount: ${poisonCount}`);
-    return { hasRat, hasPoison, ratCount, poisonCount };
-
+    return {
+      ok: true,
+      hasRat: ratCount > 0,
+      hasPoison: poisonCount > 0,
+      ratCount,
+      poisonCount,
+    };
   } catch (err) {
-    console.error('[Moralis] Fatal:', err.message);
-    return { hasRat: false, hasPoison: false, ratCount: 0, poisonCount: 0 };
+    console.error('[Moralis] NFT check failed:', err.response?.data || err.message);
+
+    return {
+      ok: false,
+      error: err.message,
+      hasRat: null,
+      hasPoison: null,
+      ratCount: null,
+      poisonCount: null,
+    };
   }
 }
 
