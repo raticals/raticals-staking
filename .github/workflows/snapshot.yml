@@ -68,4 +68,5 @@ jobs:
           OPENSEA_API_KEY: ${{ secrets.OPENSEA_API_KEY }}
           RATICALS_CONTRACT: ${{ secrets.RATICALS_CONTRACT }}
           RATPOISON_CONTRACT: ${{ secrets.RATPOISON_CONTRACT }}
+          ALLOW_WIPES: ${{ secrets.ALLOW_WIPES }}
         run: node src/snapshot.js
