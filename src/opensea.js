@@ -1,35 +1,45 @@
 const axios = require('axios');
 
-const RATICALS_CONTRACT = process.env.RATICALS_CONTRACT.toLowerCase();
-const RATPOISON_CONTRACT = process.env.RATPOISON_CONTRACT.toLowerCase();
+const COLLECTION_SLUGS = [
+  process.env.RATICALS_COLLECTION_SLUG || 'raticalseth',
+  process.env.RATPOISON_COLLECTION_SLUG || 'ratpoison',
+];
 
 async function checkIfListed(walletAddress) {
   try {
     const headers = {
-      'accept': 'application/json',
+      accept: 'application/json',
       'x-api-key': process.env.OPENSEA_API_KEY,
     };
 
-    const contracts = [RATICALS_CONTRACT, RATPOISON_CONTRACT];
-    
-    for (const contract of contracts) {
-      const url = `https://api.opensea.io/api/v2/listings/collection/${contract}/all?limit=50`;
-      const response = await axios.get(url, { headers });
+    for (const slug of COLLECTION_SLUGS) {
+      const url = `https://api.opensea.io/api/v2/listings/collection/${slug}/all?limit=100`;
 
-      if (response.data && response.data.listings) {
-        for (const listing of response.data.listings) {
-          const maker = listing?.protocol_data?.parameters?.offerer?.toLowerCase();
-          if (maker === walletAddress.toLowerCase()) {
-            return { isListed: true };
-          }
+      const response = await axios.get(url, {
+        headers,
+        timeout: 15000,
+      });
+
+      const listings = response.data?.listings || [];
+
+      for (const listing of listings) {
+        const maker = listing?.protocol_data?.parameters?.offerer?.toLowerCase();
+
+        if (maker === walletAddress.toLowerCase()) {
+          return { ok: true, isListed: true };
         }
       }
     }
 
-    return { isListed: false };
+    return { ok: true, isListed: false };
   } catch (err) {
-    console.error(`[OpenSea] Error checking listings for ${walletAddress}:`, err.message);
-    return { isListed: false };
+    console.error(`[OpenSea] Listing check failed for ${walletAddress}:`, err.response?.data || err.message);
+
+    return {
+      ok: false,
+      isListed: false,
+      error: err.message,
+    };
   }
 }
 
