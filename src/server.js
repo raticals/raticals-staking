@@ -18,8 +18,16 @@ app.post('/api/stake', async (req, res) => {
   const normalizedAddress = address.toLowerCase();
 
   try {
-    const { hasRat, hasPoison, ratCount, poisonCount } = await checkWalletNFTs(normalizedAddress);
-    const tier = getTier(hasRat, hasPoison);
+    const nftCheck = await checkWalletNFTs(normalizedAddress);
+
+if (!nftCheck.ok) {
+  return res.status(503).json({
+    error: 'NFT check temporarily failed. Please try again shortly.',
+  });
+}
+
+const { hasRat, hasPoison, ratCount, poisonCount } = nftCheck;
+const tier = getTier(hasRat, hasPoison);
 
     if (tier === 'none') {
       return res.status(400).json({
@@ -100,9 +108,17 @@ app.get('/api/wallet/:address', async (req, res) => {
   const address = req.params.address.toLowerCase();
 
   try {
-    const { hasRat, hasPoison, ratCount, poisonCount } = await checkWalletNFTs(address);
-    const tier = getTier(hasRat, hasPoison);
-    const dailyPoints = calcDailyPoints(ratCount, poisonCount);
+    const nftCheck = await checkWalletNFTs(address);
+
+if (!nftCheck.ok) {
+  return res.status(503).json({
+    error: 'NFT check temporarily failed. Please try again shortly.',
+  });
+}
+
+const { hasRat, hasPoison, ratCount, poisonCount } = nftCheck;
+const tier = getTier(hasRat, hasPoison);
+const dailyPoints = calcDailyPoints(ratCount, poisonCount);
 
     const { data: wallet } = await supabase
       .from('wallets')
