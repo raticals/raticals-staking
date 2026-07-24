@@ -1,8 +1,8 @@
 name: Raticals Staking Snapshot
 
 on:
-  schedule:
-    - cron: '13,43 * * * *'
+  # schedule:
+  #   - cron: '13,43 * * * *'
   workflow_dispatch:
 
 concurrency:
