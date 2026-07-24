@@ -11,7 +11,21 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
 
+// ── STAKING IS CLOSED ──
+// Points are frozen wherever they currently sit. No new stakes, no unstakes,
+// no wipes. This flag is the single source of truth for the "closed" state.
+const STAKING_CLOSED = true;
+const CLOSED_MESSAGE = 'Staking is closed. All $RATIC points are locked in for the airdrop.';
+
+app.get('/api/status', (req, res) => {
+  res.json({ stakingClosed: STAKING_CLOSED });
+});
+
 app.post('/api/stake', async (req, res) => {
+  if (STAKING_CLOSED) {
+    return res.status(403).json({ error: CLOSED_MESSAGE, stakingClosed: true });
+  }
+
   const { address } = req.body;
   if (!address) return res.status(400).json({ error: 'Wallet address required' });
 
@@ -20,14 +34,14 @@ app.post('/api/stake', async (req, res) => {
   try {
     const nftCheck = await checkWalletNFTs(normalizedAddress);
 
-if (!nftCheck.ok) {
-  return res.status(503).json({
-    error: 'NFT check temporarily failed. Please try again shortly.',
-  });
-}
+    if (!nftCheck.ok) {
+      return res.status(503).json({
+        error: 'NFT check temporarily failed. Please try again shortly.',
+      });
+    }
 
-const { hasRat, hasPoison, ratCount, poisonCount } = nftCheck;
-const tier = getTier(hasRat, hasPoison);
+    const { hasRat, hasPoison, ratCount, poisonCount } = nftCheck;
+    const tier = getTier(hasRat, hasPoison);
 
     if (tier === 'none') {
       return res.status(400).json({
@@ -42,31 +56,31 @@ const tier = getTier(hasRat, hasPoison);
       .eq('address', normalizedAddress)
       .single();
 
-if (existing && existing.is_staking) {
-  const { data: updated, error: updateError } = await supabase
-    .from('wallets')
-    .update({
-      has_rat: hasRat,
-      has_poison: hasPoison,
-      rat_count: ratCount,
-      poison_count: poisonCount,
-      current_tier: tier,
-      last_snapshot_at: new Date().toISOString(),
-    })
-    .eq('address', normalizedAddress)
-    .select()
-    .single();
+    if (existing && existing.is_staking) {
+      const { data: updated, error: updateError } = await supabase
+        .from('wallets')
+        .update({
+          has_rat: hasRat,
+          has_poison: hasPoison,
+          rat_count: ratCount,
+          poison_count: poisonCount,
+          current_tier: tier,
+          last_snapshot_at: new Date().toISOString(),
+        })
+        .eq('address', normalizedAddress)
+        .select()
+        .single();
 
-  if (updateError) throw updateError;
+      if (updateError) throw updateError;
 
-  return res.json({
-    success: true,
-    message: 'Stake updated',
-    wallet: updated,
-    tierLabel: getTierLabel(tier),
-    dailyPoints: calcDailyPoints(ratCount, poisonCount),
-  });
-}
+      return res.json({
+        success: true,
+        message: 'Stake updated',
+        wallet: updated,
+        tierLabel: getTierLabel(tier),
+        dailyPoints: calcDailyPoints(ratCount, poisonCount),
+      });
+    }
 
     const walletData = {
       address: normalizedAddress,
@@ -110,15 +124,15 @@ app.get('/api/wallet/:address', async (req, res) => {
   try {
     const nftCheck = await checkWalletNFTs(address);
 
-if (!nftCheck.ok) {
-  return res.status(503).json({
-    error: 'NFT check temporarily failed. Please try again shortly.',
-  });
-}
+    if (!nftCheck.ok) {
+      return res.status(503).json({
+        error: 'NFT check temporarily failed. Please try again shortly.',
+      });
+    }
 
-const { hasRat, hasPoison, ratCount, poisonCount } = nftCheck;
-const tier = getTier(hasRat, hasPoison);
-const dailyPoints = calcDailyPoints(ratCount, poisonCount);
+    const { hasRat, hasPoison, ratCount, poisonCount } = nftCheck;
+    const tier = getTier(hasRat, hasPoison);
+    const dailyPoints = calcDailyPoints(ratCount, poisonCount);
 
     const { data: wallet } = await supabase
       .from('wallets')
@@ -129,6 +143,7 @@ const dailyPoints = calcDailyPoints(ratCount, poisonCount);
     res.json({
       registered: !!wallet,
       wallet: wallet || null,
+      stakingClosed: STAKING_CLOSED,
       liveCheck: {
         hasRat,
         hasPoison,
@@ -178,7 +193,7 @@ app.get('/api/stats', async (req, res) => {
       poison_only:  staking.filter(w => w.current_tier === 'poison_only').length,
     };
 
-    res.json({ totalStakers: staking.length, totalPointsAwarded: totalPoints, tierCounts });
+    res.json({ totalStakers: staking.length, totalPointsAwarded: totalPoints, tierCounts, stakingClosed: STAKING_CLOSED });
   } catch (err) {
     console.error('[/api/stats]', err.message);
     res.status(500).json({ error: 'Internal server error' });
@@ -186,6 +201,10 @@ app.get('/api/stats', async (req, res) => {
 });
 
 app.post('/api/unstake', async (req, res) => {
+  if (STAKING_CLOSED) {
+    return res.status(403).json({ error: CLOSED_MESSAGE, stakingClosed: true });
+  }
+
   const { address } = req.body;
   if (!address) return res.status(400).json({ error: 'Wallet address required' });
 
@@ -223,11 +242,11 @@ app.post('/api/unstake', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), stakingClosed: STAKING_CLOSED });
 });
 
 app.listen(PORT, () => {
-  console.log(`[Server] Raticals staking backend running on port ${PORT}`);
+  console.log(`[Server] Raticals staking backend running on port ${PORT} — STAKING_CLOSED=${STAKING_CLOSED}`);
 });
 
 module.exports = app;
